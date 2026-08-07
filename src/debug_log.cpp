@@ -14,7 +14,13 @@ constexpr size_t kMaxBytes = 32 * 1024;
 // pipeline, only silently drop log entries.
 bool mounted() { return LittleFS.begin(false); }
 
+// Also echoed live to Serial - found while bringing this up on real
+// hardware that LittleFS-only logging is nearly useless for live debugging,
+// since the log is only readable after the fact via the setup portal's
+// /log route, which isn't even reachable during a normal (non-setup) wake
+// cycle. Serial costs nothing extra we don't already pay for.
 void appendLine(const String& line) {
+    Serial.println(line);
     if (!mounted()) return;
     File f = LittleFS.open(kLogPath, FILE_APPEND);
     if (!f) return;
@@ -24,13 +30,13 @@ void appendLine(const String& line) {
 }  // namespace
 
 void beginCycle(uint32_t cycleNumber) {
-    if (!mounted()) return;
-    File existing = LittleFS.open(kLogPath, FILE_READ);
-    size_t size = existing ? existing.size() : 0;
-    if (existing) existing.close();
-    if (size > kMaxBytes) clear();
-
-    appendLine("==== cycle " + String(cycleNumber) + " ====");
+    if (mounted()) {
+        File existing = LittleFS.open(kLogPath, FILE_READ);
+        size_t size = existing ? existing.size() : 0;
+        if (existing) existing.close();
+        if (size > kMaxBytes) clear();
+    }
+    appendLine("==== cycle " + String(cycleNumber) + " ====");  // always echoes to Serial, even if LittleFS is down
 }
 
 void logStep(const char* step, bool ok, const String& detail) {

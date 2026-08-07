@@ -3,12 +3,20 @@
 A standalone, battery-capable weather display firmware for the ESP32-S3,
 driving a 7-color (ACeP) e-paper panel.
 
-**Status:** Phases 0a–2 and the Phase 3/4 code paths are implemented and
-compile cleanly against the real ESP32-S3 Arduino toolchain (see
-[Implementation status](#implementation-status) below) — but nothing has run
-on physical hardware yet. This document started as a design-only plan; it
-now doubles as the record of that plan plus what's actually been built
-against it.
+**Status:** Phases 0a, 1, and 2 are now confirmed end-to-end on real
+hardware (see [Implementation status](#implementation-status) below) - a
+real ESP32-S3-N16-class board boots, connects to WiFi, fetches live
+Open-Meteo data, resolves its location, renders the full display (header,
+current conditions, data points, chart, 7-day forecast), and dumps a
+correct framebuffer, entirely correctly. Four real bugs were found and
+fixed via this hardware bring-up (a stack overflow, an HTTP chunked-
+encoding gap, a text-rendering transparency bug, and a date-parsing gap) -
+none of them were visible from compiling or code review alone. Phase 3/4
+(real panel, deep-sleep timing/power) are implemented and compile but
+haven't run against real panel hardware yet. This document started as a
+design-only plan; it now doubles as the record of that plan plus what's
+actually been built and verified against
+it.
 
 This project is a from-scratch firmware port of
 [InkyPiZero](https://github.com/DorusvdLinden/InkyPiZero), a Raspberry
@@ -204,19 +212,65 @@ incremental-hardware-first approach InkyPiZero already uses today via
 The module-mapping table above is fully implemented in `src/`/`include/`,
 and **compiles with zero errors and zero warnings** against the real
 `espressif32` PlatformIO platform (`arduino-esp32` 3.20017, xtensa-esp32s3
-toolchain) - verified with `pio run` in the environment this was built in,
-which has no ESP32-S3 board attached. That's the ceiling of what could be
-verified here: no serial output, no panel, no power measurements. Concretely:
+toolchain). As of 2026-08-07, the headless build has also been **flashed to
+and run on real hardware** - a genuine ESP32-S3 (QFN56, rev v0.2) with
+embedded 8MB PSRAM, connected over USB (CH343 bridge, COM3) - the first
+physical-hardware verification this project has had. Concretely:
 
-- **Phase 0a (toolchain bring-up):** done as a side effect - `pio run`
-  builds all four environments below cleanly.
-- **Phase 1 (data fetch) and Phase 2 (on-device rendering):** fully coded -
-  `weather::fetchSnapshot()`, `canvas::render()`, and every widget - but
-  *unexecuted*. No board means no serial log to confirm the Open-Meteo parse
-  is correct, and no way to eyeball the `SerialDumpDriver` output against
-  InkyPiZero's `mock_display_output/` renders (that comparison is the actual
-  Phase 2 exit criterion - see [Building](#building) for how to run it once
-  hardware exists).
+- **Phase 0a, Phase 1, and Phase 2: confirmed end-to-end on real hardware**,
+  not just compiled - flashed to a genuine ESP32-S3 (QFN56 rev v0.2, 8MB
+  embedded PSRAM) over USB (CH343 bridge) on 2026-08-07. Full captured
+  serial log for one complete wake cycle:
+  `psramInit(): PSRAM enabled` -> `Weather-EPS32S3 boot` -> WiFi setup
+  portal (first boot, no credentials saved) -> after WiFi credentials were
+  entered via the portal on a real phone -> `[OK] boot` -> `[OK]
+  wifi_connect - 192.168.1.140` -> `[OK] weather_fetch` -> `[OK]
+  location_resolve - Sittard, Nederland` -> `[OK] canvas_render` -> a real
+  192000-byte `SerialDumpDriver` framebuffer dump -> `[OK] panel_push` ->
+  `[OK] sleep` -> `Render complete, entering deep sleep`. The dumped frame
+  was reassembled with `tools/dump_to_png.py` into an actual rendered
+  image - live weather, live-resolved location name, a correct 24h chart,
+  and a correct 7-day forecast row, all real. That's every module in this
+  table actually exercised together against live network data, not just
+  individually plausible.
+
+  **Four real bugs surfaced this way that no amount of compiling or code
+  review had caught:**
+  1. A **stack overflow** (`Guru Meditation Error... Stack canary watchpoint
+     triggered (loopTask)`) triggered by WiFi's own internal auth-retry
+     event processing on a bad password, crash-looping the device instead
+     of failing gracefully into deep sleep. arduino-esp32's default
+     `loopTask` stack is only 8KB; fixed with `SET_LOOP_TASK_STACK_SIZE(16384)`
+     in `main.cpp` (that macro is arduino-esp32's own documented override).
+  2. **`HTTPClient::getStream()` doesn't decode chunked transfer-encoding**
+     (confirmed by reading the actual framework source after
+     `deserializeJson` returned `InvalidInput` on live Open-Meteo
+     responses) - only `getString()`/`writeToStream()` do. Fixed by
+     buffering the response with `getString()` before parsing
+     (`weather/open_meteo.cpp`'s `httpGetJson()`), trading the originally-
+     intended streaming-parse memory savings for correctness.
+  3. **All text rendered as solid black boxes** instead of legible glyphs.
+     Root cause: `U8g2_for_Adafruit_GFX`'s `u8g2_SetFont()` silently resets
+     font transparency to opaque on every font change; calling
+     `setFontMode(1)` once at startup (as the code originally did) only
+     survives until the first `setFont()` call anywhere. Fixed by
+     re-asserting `setFontMode(1)` after every `setFont()` in
+     `graphics/text.cpp`.
+  4. **The entire forecast row silently rendered empty** (`0°/0°`,
+     no cards) - `weather_fetch` itself reported success, so this wasn't
+     caught by that check. Root cause: Open-Meteo's `daily` block returns
+     *date-only* strings ("2026-08-07", no time component - daily
+     granularity has nothing to put there), but `parseIsoLocal()` only
+     accepted the full `current`/`hourly`-style datetime format, so every
+     single daily entry silently failed to parse and `dailyCount` stayed
+     0. Fixed with a date-only fallback in `open_meteo.cpp`.
+
+  Every one of these was invisible from source review or compilation -
+  they only showed up against a real chip, a real WiFi network with a
+  transient auth hiccup, and real API responses. This is the concrete
+  argument for why this README kept insisting "unverified without hardware"
+  throughout: here is what four different unverified assumptions actually
+  looked like once checked.
 - **Phase 3 (real panel) and Phase 4 (power/scheduling):** the code paths
   exist for **three** panels now, not one - `EpdDriver` (`GxEPD2_730c_ACeP_730`),
   `WaveshareMonoDriver` (`GxEPD2_750_GDEY075T7`, monochrome), and

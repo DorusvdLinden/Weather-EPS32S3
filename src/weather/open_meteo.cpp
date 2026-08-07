@@ -45,9 +45,21 @@ struct LocalTime {
     int year = 0, month = 0, day = 0, hour = 0, minute = 0;
 };
 
+// Confirmed on real hardware: Open-Meteo's `daily` block returns
+// *date-only* strings ("2026-08-07", no "T15:30" time component - daily
+// granularity has nothing to put there), unlike current/hourly's full
+// datetime strings. The full-format-only version of this function silently
+// failed to parse every single daily.time entry, which zeroed out
+// dailyCount without fetchSnapshot() ever seeing an error (the loop over
+// daily entries just `continue`d every iteration) - the forecast row
+// rendered as completely empty. Falls back to date-only (hour=minute=0)
+// when the full format doesn't match.
 bool parseIsoLocal(const char* s, LocalTime& out) {
     if (!s) return false;
-    return sscanf(s, "%d-%d-%dT%d:%d", &out.year, &out.month, &out.day, &out.hour, &out.minute) == 5;
+    if (sscanf(s, "%d-%d-%dT%d:%d", &out.year, &out.month, &out.day, &out.hour, &out.minute) == 5) return true;
+    out.hour = 0;
+    out.minute = 0;
+    return sscanf(s, "%d-%d-%d", &out.year, &out.month, &out.day) == 3;
 }
 
 bool sameDate(const LocalTime& a, const LocalTime& b) {
@@ -219,9 +231,19 @@ bool httpGetJson(const String& url, JsonDocument& doc, JsonDocument* filter, uin
         http.end();
         return false;
     }
-    DeserializationError err = filter ? deserializeJson(doc, http.getStream(), DeserializationOption::Filter(*filter))
-                                       : deserializeJson(doc, http.getStream());
+    // Deliberately not http.getStream(): confirmed on real hardware that
+    // Open-Meteo's response is chunked-transfer-encoded, and
+    // HTTPClient::getStream() returns the raw TCP stream with chunk-size
+    // markers still embedded - deserializeJson() failed with "InvalidInput"
+    // reading it directly. getString() routes through HTTPClient's own
+    // writeToStream(), which does correctly de-chunk (see
+    // HTTPClient.cpp's HTTPC_TE_CHUNKED handling) - the streaming-parse
+    // memory savings this originally aimed for isn't available from this
+    // library without reimplementing chunk decoding ourselves.
+    String body = http.getString();
     http.end();
+    DeserializationError err = filter ? deserializeJson(doc, body, DeserializationOption::Filter(*filter))
+                                       : deserializeJson(doc, body);
     return !err;
 }
 
@@ -427,6 +449,7 @@ void parseDataPoints(JsonObjectConst current, JsonObjectConst hourlyObj, JsonObj
         dp.kind = DataPointKind::Wind;
         dp.label = beaufortDescriptionNl(windSpeedMs(speed, config.units));
         dp.direction = windDirectionAbbrNl(dir);
+        dp.rawValue = dir;
         char buf[16];
         snprintf(buf, sizeof(buf), "%.0f %s", speed, u.speed);
         dp.valueText = buf;
@@ -451,6 +474,7 @@ void parseDataPoints(JsonObjectConst current, JsonObjectConst hourlyObj, JsonObj
         dp.kind = DataPointKind::Pressure;
         dp.label = "Luchtdruk";
         dp.valueText = ok ? String(static_cast<int>(pressure)) + " hPa" : "N/A";
+        dp.rawValue = pressure;
     }
     // UV
     {
@@ -460,6 +484,7 @@ void parseDataPoints(JsonObjectConst current, JsonObjectConst hourlyObj, JsonObj
         DataPoint& dp = out.dataPoints[3];
         dp.kind = DataPointKind::Uv;
         dp.label = "UV-index";
+        dp.rawValue = uv;
         char buf[8];
         if (ok) {
             snprintf(buf, sizeof(buf), "%.1f", uv);
@@ -496,6 +521,7 @@ void parseDataPoints(JsonObjectConst current, JsonObjectConst hourlyObj, JsonObj
         dp.kind = DataPointKind::Aqi;
         dp.label = "Luchtkwaliteit";
         dp.valueText = ok ? String(static_cast<int>(std::lround(aqi))) + " " + aqiScaleNl(aqi) : "N/A";
+        dp.rawValue = aqi;
     }
 }
 

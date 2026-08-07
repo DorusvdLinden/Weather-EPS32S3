@@ -162,13 +162,20 @@ void drawChart(RgbCanvas& canvas, const layout::Region& region, const weather::W
     snprintf(buf, sizeof(buf), "0 %s", rainUnitLabel);
     text::draw(buf, I(plotX1) + 6, I(yRain(0)), boldFont12, textColor565, text::HAlign::Left, text::VAlign::Middle);
 
-    // Vertical axis unit labels - approximate placement (bottom-anchored,
-    // reading upward via u8g2 direction=3); check against the Phase 2
-    // serial-dump render, no hardware available here to verify visually.
-    text::draw(tempUnitLabel, I(region.x) + 12, I(plotY1), boldFont12, textColor565, text::HAlign::Left,
-               text::VAlign::Baseline, 3);
-    text::draw("Regen", I(region.right()) - 14, I(plotY1), boldFont12, textColor565, text::HAlign::Left,
-               text::VAlign::Baseline, 3);
+    // Vertical axis unit labels, centered on the plot height - confirmed on
+    // real hardware that these need centering explicitly: direction=3 text
+    // grows *upward* from its anchor point (the anchor is the bottom end of
+    // the rotated label), so anchoring at plotY1 (as an earlier version did)
+    // left both labels sitting low near the bottom of the chart instead of
+    // centered alongside it. Offsetting the anchor down by half the label's
+    // (pre-rotation) width puts its vertical center on plotCenterY instead.
+    float plotCenterY = (plotY0 + plotY1) / 2.0f;
+    int tempLabelW = text::width(tempUnitLabel, boldFont12);
+    text::draw(tempUnitLabel, I(region.x) + 12, I(plotCenterY) + tempLabelW / 2, boldFont12, textColor565,
+               text::HAlign::Left, text::VAlign::Baseline, 3);
+    int rainLabelW = text::width("Regen", boldFont12);
+    text::draw("Regen", I(region.right()) - 14, I(plotCenterY) + rainLabelW / 2, boldFont12, textColor565,
+               text::HAlign::Left, text::VAlign::Baseline, 3);
 
     // X-axis hour labels - same cadence as the icon strip below.
     const uint8_t* normalFont12 = assets::font(assets::FontWeight::Regular, 12);

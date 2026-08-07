@@ -33,6 +33,18 @@
 #include "display/inky_impression_driver.h"
 #endif
 
+// arduino-esp32's default loopTask stack is only 8KB (ARDUINO_LOOP_STACK_SIZE
+// in cores/esp32/main.cpp) - confirmed too small on real hardware: a WiFi
+// auth failure (wrong password) triggered a genuine stack-canary panic
+// ("Guru Meditation Error... Stack canary watchpoint triggered (loopTask)")
+// during the WiFi driver's own internal auth-retry event processing, before
+// this code even reached the TLS handshake (WiFiClientSecure/mbedTLS) or
+// JSON parsing later in the same cycle - both also meaningfully stack-heavy.
+// SET_LOOP_TASK_STACK_SIZE is arduino-esp32's own documented override (must
+// be at file scope, not inside a namespace, so it correctly replaces the
+// weak default symbol at link time). Must come before setup()/loop().
+SET_LOOP_TASK_STACK_SIZE(16384);
+
 // Survives deep sleep (unlike everything else, which resets) - gives the
 // debug log a meaningful cycle identifier even though there's no RTC/NTP
 // wall clock on this device (see weather/open_meteo.h's timezone note).

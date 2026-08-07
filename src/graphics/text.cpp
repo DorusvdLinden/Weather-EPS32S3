@@ -21,6 +21,15 @@ int width(const char* str, const uint8_t* font) {
 
 void draw(const char* str, int x, int y, const uint8_t* font, uint16_t color565, HAlign h, VAlign v, int direction) {
     g_u8g2.setFont(font);
+    // Confirmed on real hardware: U8g2_for_Adafruit_GFX's u8g2_SetFont()
+    // silently resets transparency to opaque whenever the font pointer
+    // changes ("u8g2->font_decode.is_transparent = 0" unconditionally on a
+    // font change, in U8g2_for_Adafruit_GFX.cpp). Calling setFontMode(1)
+    // once in begin() therefore only survives until the *first* setFont()
+    // call anywhere - after that every glyph draws as a solid opaque
+    // foreground-colored box instead of transparent glyph strokes. Must be
+    // re-asserted after every setFont(), not just once at startup.
+    g_u8g2.setFontMode(1);
     g_u8g2.setForegroundColor(color565);
     g_u8g2.setFontDirection(direction);
 

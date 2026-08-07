@@ -5,7 +5,7 @@
 
 ## processor
 3 - [x] check software & propose a pin config for specific hardware: https://www.amazon.nl/dp/B0FQBYLL6S?ref=ppx_yo2ov_dt_b_fed_asin_title
-4 - [ ] connect remotely to a esp32S3
+4 - [x] connect remotely to a esp32S3
 
 ## display hardware
 5 - [x] add support for the the waveshare mono color 800x480 7 inch V2, includign a setting in the gui and the documentation incudign wiring & pinout.
@@ -13,5 +13,16 @@
 
 ## test
 7 - [x] test local run and safe the generated image
-8 - [ ] test connect & deploy method to hardware
-  
+8 - [x] test connect & deploy method to hardware
+8 - [x] NA
+
+## optical
+9 - [x] move degC and regen axis labels up a bit
+10 - [x] fix the missing icons for the details: UV, quality pressure & wind direction
+11 - [ ] pick more smart / solid colors to support the dithering display
+12 - [ ] 
+13 - [ ] 
+14 - [ ] 
+15 - [ ] 
+16 - [ ] Connect the display & run the application fully on ESP32S3
+

@@ -21,16 +21,22 @@ namespace weather {
 
 enum class DataPointKind : uint8_t { Wind, Humidity, Pressure, Uv, Visibility, Aqi };
 
-// v1 simplification (README decision #3): only the fields the simplified
-// numeric/bar readouts need. Phase 5 re-adds gauge-rotation/beam-geometry
-// fields here when widgets/gauge.py's hand-drawn compass/needle math is
-// ported.
+// v1 simplification (README decision #3): text readouts plus a lightweight
+// icon (compass needle / pressure dial / UV sun / AQI badge - see
+// widgets/data_points.cpp) computed from `rawValue`, not the full hand-drawn
+// gauges (dashed-circle compass, barometer arc with weather glyphs, UV
+// sunburst beams, AQI color-banded arc) widgets/gauge.py has - those need a
+// thick-arc helper this port doesn't have yet (README's Phase 5 note).
 struct DataPoint {
     DataPointKind kind;
     String label;
     String valueText;  // fully formatted "<measurement> <unit>", e.g. "12 m/s"
     String direction;  // wind only, else empty
     int dropCount = 0;  // humidity only
+    // Kind-specific physical value the widget's icon is computed from:
+    // wind = direction in degrees, pressure = hPa, uv = index, aqi = index.
+    // NAN if the value was unavailable ("N/A") - unused for humidity/visibility.
+    double rawValue = 0;
 };
 
 struct HourPoint {
