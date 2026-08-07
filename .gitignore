@@ -1,0 +1,7 @@
+.pio/
+.vscode/
+.DS_Store
+*.pyc
+__pycache__/
+/mock_output/
+/tools/dev_data/
