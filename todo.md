@@ -1,3 +1,11 @@
+# TODO
+
+- **Weather-EPS32S3**: battery-capable weather display firmware for an ESP32-S3 with a 7-colour e-paper panel, a port of InkyPiZero.
+- Status (2026-11-22): WiFi, live Open-Meteo data and full rendering confirmed on real hardware (2026-08-07); real panel and deep sleep not yet run on hardware.
+- Open: phases 3-4 on the real panel.
+- Next: run on the real panel, then measure deep-sleep battery life.
+- Details: README.md (implementation status).
+
 ## Ideas to do
 ## features
 1 - [x] create an install manual / script 
